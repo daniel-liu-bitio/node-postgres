@@ -14,9 +14,10 @@ class Connection extends EventEmitter {
   constructor(config) {
     super()
     config = config || {}
-    this.stream = config.stream // possibly null, try to lazily load on connect
     this.placeholderStream = false
-    if(!config.stream) {
+    this.stream = config.stream // possibly null: if so, temporarily use placeholder and lazily make the stream on connect()
+                                // since websocketstream attempts to connect on construction
+    if(!this.stream) {
       var placeholder = {
         once: function(){},
         on: function(){},
@@ -31,7 +32,7 @@ class Connection extends EventEmitter {
           }
         } 
       }
-      config.stream = placeholder
+      this.stream = placeholder
       this.placeholderStream = true
     } 
     this.lastBuffer = false
@@ -52,7 +53,7 @@ class Connection extends EventEmitter {
       if(port && host) {
         var url = 'ws://'+host+':'+port;
       } else {
-        var url = 'ws://localhost:5901'
+        var url = 'ws://localhost:5432'
       }
       this.stream = new WebSocketStream(url)
       this.placeholderStream = false
@@ -95,6 +96,7 @@ class Connection extends EventEmitter {
           return self.emit('error', new Error('There was an error establishing an SSL connection'))
       }
       var tls = require('tls')
+      var { isIP } = require('is-ip')
       const options = {
         socket: self.stream,
       }
@@ -106,9 +108,9 @@ class Connection extends EventEmitter {
         }
       }
 
-      // if (net.isIP(host) === 0) {
-      //   options.servername = host
-      // }
+      if (!isIP(host)) {
+        options.servername = host
+      }
       try {
         self.stream = tls.connect(options)
       } catch (err) {
@@ -131,7 +133,6 @@ class Connection extends EventEmitter {
         this.emit('message', msg)
       }
       this.emit(eventName, msg)
-      // console.log(msg)
     })
   }
 
@@ -210,15 +211,20 @@ class Connection extends EventEmitter {
     this._ending = true
     if (!this._connecting || !this.stream.writable) {
       if(this.stream.socket) {
-        this.stream.socket.close()
+        // if we don't pass in 'data' parameter to socket.close(), 
+        // the server might send a 1005 close code in response (no status code present)
+        // and ws will error upon receiving the 1005 code
+        this.stream.socket.close(1000, 'connection.end called')
       } else {
         this.stream.end()
       }
       return
     }
     return this.stream.write(endBuffer, () => {
+      // checking for stream.socket is purely for unit/integration test purposes 
+      // websockets use stream.socket.close() while the streams used in testing use stream.end()
       if(this.stream.socket) {
-        this.stream.socket.close()
+        this.stream.socket.close(1000, 'connection.end called')
       } else {
         this.stream.end()
       }

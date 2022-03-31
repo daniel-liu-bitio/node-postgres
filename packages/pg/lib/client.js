@@ -268,7 +268,6 @@ class Client extends EventEmitter {
   }
 
   _handleReadyForQuery(msg) {
-    console.log("Status: " + msg.status)
     if (this._connecting) {
       this._connecting = false
       this._connected = true
@@ -601,7 +600,7 @@ class Client extends EventEmitter {
       // if we have an active query we need to force a disconnect
       // on the socket - otherwise a hung query could block end forever
       this.connection.stream.destroy()
-    } else if (this.connection._connecting) {
+    } else {
       this.connection.end()
     }
 
